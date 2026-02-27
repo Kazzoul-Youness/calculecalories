@@ -1,12 +1,13 @@
-# Application calories à partir de photos (Streamlit + Web)
+# Application calories à partir de photos (Streamlit)
 
-Tu avais raison : dans la version précédente, si tu ne renseignais pas la case calories, la valeur tombait souvent sur le défaut (550 pour plat), donc plusieurs plats donnaient le même résultat.
+Cette application permet de :
 
-Cette version corrige ça avec une estimation **plus intelligente** :
-- d'abord via des mots-clés du nom saisi (ex: salade, burger, jus),
-- puis, si aucun mot-clé, via une signature de la photo (hash image) pour éviter le 550 fixe.
+- Importer des photos de plats et boissons.
+- Saisir (ou estimer automatiquement) les calories.
+- Additionner les calories par entrée et par journée.
+- Afficher un graphique des calories consommées chaque jour.
 
-## Lancer en local (Streamlit)
+## Lancer en local
 
 ```bash
 pip install -r requirements.txt
@@ -15,23 +16,20 @@ streamlit run streamlit_app.py
 
 ## Déployer sur Streamlit Community Cloud
 
-1. Pousse le dépôt sur GitHub.
+1. Pousse ce dépôt sur GitHub.
 2. Ouvre: `https://share.streamlit.io/deploy`
-3. Remplis:
+3. Renseigne:
    - **Repository**: `Kazzoul-Youness/calculecalories`
    - **Branch**: `main`
    - **Main file path**: `streamlit_app.py`
 4. Clique sur **Deploy**.
 
-## Comment éviter le 550 kcal identique
+> Dans ton screenshot, l'erreur vient du champ **Main file path** vide/invalide.
+> Mets simplement `streamlit_app.py`.
 
-- Si tu connais les calories, saisis-les manuellement (le plus fiable).
-- Sinon, mets un nom explicite, par exemple:
-  - `salade concombre` (plus léger)
-  - `burger frites` (plus riche)
-  - `jus orange` / `soda`
-- L'app affiche maintenant le **mode** utilisé (`manuel`, `auto (mot-clé: ...)`, ou `auto (photo)`).
+## Notes
 
-## Limite importante
-
-Sans service IA externe de vision, l'app ne "comprend" pas vraiment le contenu de la photo: l'estimation automatique reste approximative.
+- Estimation automatique si calories non renseignées:
+  - Plat: **550 kcal** / portion
+  - Boisson: **120 kcal** / portion
+- Les données sont gardées dans la session Streamlit en mémoire.

@@ -1,261 +1,142 @@
-const STORAGE_KEY = 'calorie_journal_entries_v1';
-const DEFAULT_CALORIES = {
-  plat: 550,
-  boisson: 120,
-};
-
-const KEYWORD_ESTIMATES = {
-  plat: [
-    { keywords: ['salade', 'soupe', 'legume', 'concombre'], calories: 250 },
-    { keywords: ['poisson', 'poulet', 'grillade', 'fruit de mer', 'crevette'], calories: 420 },
-    { keywords: ['riz', 'pates', 'pasta', 'couscous'], calories: 500 },
-    { keywords: ['dessert', 'gateau', 'tiramisu', 'glace'], calories: 450 },
-    { keywords: ['pizza', 'burger', 'tacos', 'frites'], calories: 850 },
-    { keywords: ['creme', 'fromage', 'bacon'], calories: 700 },
-  ],
-  boisson: [
-    { keywords: ['eau', 'the', 'cafe'], calories: 5 },
-    { keywords: ['jus', 'smoothie'], calories: 110 },
-    { keywords: ['soda', 'cola'], calories: 150 },
-    { keywords: ['milkshake'], calories: 300 },
-    { keywords: ['vin', 'biere', 'alcool', 'cocktail'], calories: 180 },
-  ],
-};
-
-const IMAGE_FALLBACK_RANGES = {
-  plat: { min: 280, max: 950 },
-  boisson: { min: 10, max: 280 },
-};
-
-const form = document.getElementById('entry-form');
-const photoInput = document.getElementById('photo');
-const dateInput = document.getElementById('entry-date');
-const typeInput = document.getElementById('type');
-const nameInput = document.getElementById('name');
-const quantityInput = document.getElementById('quantity');
-const caloriesInput = document.getElementById('calories');
-const selectedDateInput = document.getElementById('selected-date');
-const dailyTotalEl = document.getElementById('daily-total');
-const entriesEl = document.getElementById('entries');
-const chartEl = document.getElementById('chart');
-
-const today = new Date().toISOString().split('T')[0];
-dateInput.value = today;
-selectedDateInput.value = today;
-
-let entries = loadEntries();
-render();
-
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-
-  if (!photoInput.files || !photoInput.files[0]) {
-    return;
-  }
-
-  const file = photoInput.files[0];
-  const imageDataUrl = await fileToDataUrl(file);
-
-  const type = typeInput.value;
-  const quantity = Number(quantityInput.value);
-  const customCalories = Number(caloriesInput.value);
-  const name = nameInput.value.trim();
-
-  const estimation = estimateCalories(type, name, imageDataUrl);
-  const isManual = Number.isFinite(customCalories) && customCalories > 0;
-  const caloriesPerPortion = isManual ? customCalories : estimation.calories;
-  const totalCalories = Math.round(caloriesPerPortion * quantity);
-
-  const entry = {
-    id: crypto.randomUUID(),
-    date: dateInput.value,
-    type,
-    name: name || `${capitalize(type)} sans nom`,
-    quantity,
-    caloriesPerPortion,
-    totalCalories,
-    imageDataUrl,
-    estimationSource: isManual ? 'manuel' : estimation.mode,
-    createdAt: new Date().toISOString(),
-  };
-
-  entries.push(entry);
-  saveEntries(entries);
-
-  form.reset();
-  dateInput.value = today;
-  selectedDateInput.value = entry.date;
-  render();
-});
-
-selectedDateInput.addEventListener('change', updateDailyTotal);
-
-function loadEntries() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (error) {
-    console.error('Impossible de lire le stockage local', error);
-    return [];
-  }
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --primary: #2563eb;
+  --primary-soft: #dbeafe;
+  --border: #e5e7eb;
+  --success: #047857;
 }
 
-function saveEntries(nextEntries) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextEntries));
+* {
+  box-sizing: border-box;
 }
 
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
 }
 
-function normalize(value) {
-  return (value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.25rem;
 }
 
-function hashString(value) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash;
+header {
+  margin-bottom: 1rem;
 }
 
-function imageBasedFallback(type, imageDataUrl) {
-  const range = IMAGE_FALLBACK_RANGES[type];
-  const span = range.max - range.min + 1;
-  const signature = hashString(imageDataUrl.slice(-5000));
-  return range.min + (signature % span);
+h1,
+h2 {
+  margin: 0 0 0.5rem;
 }
 
-function estimateCalories(type, name, imageDataUrl) {
-  const normalizedName = normalize(name);
-  const rules = KEYWORD_ESTIMATES[type] || [];
-  const matches = [];
-
-  for (const rule of rules) {
-    for (const keyword of rule.keywords) {
-      if (normalizedName.includes(keyword)) {
-        matches.push({ keyword, calories: rule.calories });
-      }
-    }
-  }
-
-  if (matches.length > 0) {
-    const average = matches.reduce((sum, item) => sum + item.calories, 0) / matches.length;
-    return { calories: Math.round(average), mode: `auto (mot-clé: ${matches[0].keyword})` };
-  }
-
-  return { calories: imageBasedFallback(type, imageDataUrl), mode: 'auto (photo)' };
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1rem;
 }
 
-function updateDailyTotal() {
-  const selectedDate = selectedDateInput.value;
-  const total = entries
-    .filter((entry) => entry.date === selectedDate)
-    .reduce((sum, entry) => sum + entry.totalCalories, 0);
-  dailyTotalEl.textContent = `${total} kcal`;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
 }
 
-function renderEntries() {
-  entriesEl.innerHTML = '';
-
-  const sorted = [...entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-  for (const entry of sorted) {
-    const item = document.createElement('li');
-    item.className = 'entry';
-    item.innerHTML = `
-      <img src="${entry.imageDataUrl}" alt="${entry.name}" />
-      <div class="entry-meta">
-        <strong>${entry.name}</strong>
-        <span>${entry.date} • ${capitalize(entry.type)}</span>
-        <span>Quantité: ${entry.quantity}</span>
-        <span>${entry.caloriesPerPortion} kcal / portion</span>
-        <span>Mode: ${entry.estimationSource || 'manuel'}</span>
-        <strong>Total: ${entry.totalCalories} kcal</strong>
-      </div>
-    `;
-    entriesEl.appendChild(item);
-  }
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.92rem;
 }
 
-function renderChart() {
-  const totalsByDate = entries.reduce((acc, entry) => {
-    acc[entry.date] = (acc[entry.date] || 0) + entry.totalCalories;
-    return acc;
-  }, {});
-
-  const dates = Object.keys(totalsByDate).sort();
-  const values = dates.map((date) => totalsByDate[date]);
-
-  const width = 860;
-  const height = 280;
-  const padding = { top: 18, right: 20, bottom: 45, left: 45 };
-
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...values, 100);
-
-  const bars = dates
-    .map((date, index) => {
-      const value = totalsByDate[date];
-      const barWidth = chartWidth / Math.max(dates.length, 1) - 18;
-      const x = padding.left + index * (chartWidth / Math.max(dates.length, 1)) + 9;
-      const barHeight = (value / maxValue) * (chartHeight - 10);
-      const y = padding.top + chartHeight - barHeight;
-
-      return `
-        <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="#2563eb" rx="6"></rect>
-        <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#1f2937">${value}</text>
-        <text x="${x + barWidth / 2}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#6b7280">${formatDate(date)}</text>
-      `;
-    })
-    .join('');
-
-  const yTicks = [0, 0.25, 0.5, 0.75, 1]
-    .map((ratio) => {
-      const value = Math.round(maxValue * ratio);
-      const y = padding.top + chartHeight - ratio * chartHeight;
-      return `
-        <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#e5e7eb" />
-        <text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6b7280">${value}</text>
-      `;
-    })
-    .join('');
-
-  const empty =
-    dates.length === 0
-      ? `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#6b7280">Ajoute des entrées pour afficher le graphique.</text>`
-      : '';
-
-  chartEl.innerHTML = `
-    <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"></rect>
-    ${yTicks}
-    <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${width - padding.right}" y2="${padding.top + chartHeight}" stroke="#9ca3af" />
-    ${bars}
-    ${empty}
-  `;
+input,
+select,
+button {
+  font: inherit;
 }
 
-function formatDate(date) {
-  const [year, month, day] = date.split('-');
-  return `${day}/${month}`;
+input,
+select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.52rem 0.65rem;
 }
 
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+button {
+  margin-top: 0.9rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-function render() {
-  renderEntries();
-  updateDailyTotal();
-  renderChart();
+.hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0.8rem 0 0;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+#daily-total {
+  color: var(--success);
+  font-size: 1.25rem;
+}
+
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.entry {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.6rem;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.entry img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.entry-meta {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+}
+
+.entry-meta strong {
+  font-size: 0.98rem;
+}
+
+#chart {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
