@@ -4,6 +4,24 @@ const DEFAULT_CALORIES = {
   boisson: 120,
 };
 
+const KEYWORD_ESTIMATES = {
+  plat: [
+    { keywords: ['salade', 'soupe', 'legume', 'concombre'], calories: 250 },
+    { keywords: ['poisson', 'poulet', 'grillade', 'fruit de mer', 'crevette'], calories: 420 },
+    { keywords: ['riz', 'pates', 'pasta', 'couscous'], calories: 500 },
+    { keywords: ['dessert', 'gateau', 'tiramisu', 'glace'], calories: 450 },
+    { keywords: ['pizza', 'burger', 'tacos', 'frites'], calories: 850 },
+    { keywords: ['creme', 'fromage', 'bacon'], calories: 700 },
+  ],
+  boisson: [
+    { keywords: ['eau', 'the', 'cafe'], calories: 5 },
+    { keywords: ['jus', 'smoothie'], calories: 110 },
+    { keywords: ['soda', 'cola'], calories: 150 },
+    { keywords: ['milkshake'], calories: 300 },
+    { keywords: ['vin', 'biere', 'alcool', 'cocktail'], calories: 180 },
+  ],
+};
+
 const form = document.getElementById('entry-form');
 const photoInput = document.getElementById('photo');
 const dateInput = document.getElementById('entry-date');
@@ -36,22 +54,27 @@ form.addEventListener('submit', async (event) => {
   const type = typeInput.value;
   const quantity = Number(quantityInput.value);
   const customCalories = Number(caloriesInput.value);
-  const caloriesPerPortion =
-    Number.isFinite(customCalories) && customCalories > 0
-      ? customCalories
-      : DEFAULT_CALORIES[type];
+  const name = nameInput.value.trim();
 
+  const estimation = estimateCalories(type, name);
+  const isManual = Number.isFinite(customCalories) && customCalories > 0;
+  const caloriesPerPortion = isManual ? customCalories : estimation.calories;
   const totalCalories = Math.round(caloriesPerPortion * quantity);
 
   const entry = {
     id: crypto.randomUUID(),
     date: dateInput.value,
     type,
-    name: nameInput.value.trim() || `${capitalize(type)} sans nom`,
+    name: name || `${capitalize(type)} sans nom`,
     quantity,
     caloriesPerPortion,
     totalCalories,
     imageDataUrl,
+    estimationSource: isManual
+      ? 'manuel'
+      : estimation.match
+        ? `auto (${estimation.match})`
+        : 'auto (défaut)',
     createdAt: new Date().toISOString(),
   };
 
@@ -89,6 +112,34 @@ function fileToDataUrl(file) {
   });
 }
 
+function normalize(value) {
+  return (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function estimateCalories(type, name) {
+  const normalizedName = normalize(name);
+  const rules = KEYWORD_ESTIMATES[type] || [];
+  const matches = [];
+
+  for (const rule of rules) {
+    for (const keyword of rule.keywords) {
+      if (normalizedName.includes(keyword)) {
+        matches.push({ keyword, calories: rule.calories });
+      }
+    }
+  }
+
+  if (matches.length > 0) {
+    const average = matches.reduce((sum, item) => sum + item.calories, 0) / matches.length;
+    return { calories: Math.round(average), match: matches[0].keyword };
+  }
+
+  return { calories: DEFAULT_CALORIES[type], match: '' };
+}
+
 function updateDailyTotal() {
   const selectedDate = selectedDateInput.value;
   const total = entries
@@ -112,6 +163,7 @@ function renderEntries() {
         <span>${entry.date} • ${capitalize(entry.type)}</span>
         <span>Quantité: ${entry.quantity}</span>
         <span>${entry.caloriesPerPortion} kcal / portion</span>
+        <span>Mode: ${entry.estimationSource || 'manuel'}</span>
         <strong>Total: ${entry.totalCalories} kcal</strong>
       </div>
     `;
