@@ -1,0 +1,739 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae5ca30c642ba244cbc8e8e17d3e723fb8f830f7
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,37 @@
++# Application calories à partir de photos (Streamlit + Web)
++
++Tu avais raison : dans la version précédente, si tu ne renseignais pas la case calories, la valeur tombait souvent sur le défaut (550 pour plat), donc plusieurs plats donnaient le même résultat.
++
++Cette version corrige ça avec une estimation **plus intelligente** :
++- d'abord via des mots-clés du nom saisi (ex: salade, burger, jus),
++- puis, si aucun mot-clé, via une signature de la photo (hash image) pour éviter le 550 fixe.
++
++## Lancer en local (Streamlit)
++
++```bash
++pip install -r requirements.txt
++streamlit run streamlit_app.py
++```
++
++## Déployer sur Streamlit Community Cloud
++
++1. Pousse le dépôt sur GitHub.
++2. Ouvre: `https://share.streamlit.io/deploy`
++3. Remplis:
++   - **Repository**: `Kazzoul-Youness/calculecalories`
++   - **Branch**: `main`
++   - **Main file path**: `streamlit_app.py`
++4. Clique sur **Deploy**.
++
++## Comment éviter le 550 kcal identique
++
++- Si tu connais les calories, saisis-les manuellement (le plus fiable).
++- Sinon, mets un nom explicite, par exemple:
++  - `salade concombre` (plus léger)
++  - `burger frites` (plus riche)
++  - `jus orange` / `soda`
++- L'app affiche maintenant le **mode** utilisé (`manuel`, `auto (mot-clé: ...)`, ou `auto (photo)`).
++
++## Limite importante
++
++Sans service IA externe de vision, l'app ne "comprend" pas vraiment le contenu de la photo: l'estimation automatique reste approximative.
+diff --git a/index.html b/index.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6b8315369adad11d197e91ddf5027bd8413b862
+--- /dev/null
++++ b/index.html
+@@ -0,0 +1,95 @@
++<!doctype html>
++<html lang="fr">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Calories Journal - Photos de repas</title>
++    <link rel="stylesheet" href="styles.css" />
++  </head>
++  <body>
++    <main class="container">
++      <header>
++        <h1>Journal de calories</h1>
++        <p>
++          Ajoute des photos de tes plats et boissons, renseigne les infos, puis
++          suis les calories consommées par journée.
++        </p>
++      </header>
++
++      <section class="card">
++        <h2>Ajouter une entrée</h2>
++        <form id="entry-form">
++          <div class="grid">
++            <label>
++              Photo du plat / boisson
++              <input type="file" id="photo" accept="image/*" required />
++            </label>
++
++            <label>
++              Date
++              <input type="date" id="entry-date" required />
++            </label>
++
++            <label>
++              Type
++              <select id="type" required>
++                <option value="">Sélectionner</option>
++                <option value="plat">Plat</option>
++                <option value="boisson">Boisson</option>
++              </select>
++            </label>
++
++            <label>
++              Nom (optionnel)
++              <input type="text" id="name" placeholder="Ex: Salade, Jus d'orange" />
++            </label>
++
++            <label>
++              Quantité
++              <input type="number" id="quantity" min="1" value="1" required />
++            </label>
++
++            <label>
++              Calories par portion (optionnel)
++              <input
++                type="number"
++                id="calories"
++                min="1"
++                placeholder="Laisser vide pour estimation"
++              />
++            </label>
++          </div>
++
++          <p class="hint">
++            Si tu ne renseignes pas les calories, une estimation automatique est appliquée via le nom du plat/boisson (mots-clés).
++          </p>
++
++          <button type="submit">Ajouter l'entrée</button>
++        </form>
++      </section>
++
++      <section class="card">
++        <h2>Total calories du jour sélectionné</h2>
++        <div class="total-row">
++          <label>
++            Voir le total pour le jour
++            <input type="date" id="selected-date" />
++          </label>
++          <strong id="daily-total">0 kcal</strong>
++        </div>
++      </section>
++
++      <section class="card">
++        <h2>Historique des entrées</h2>
++        <ul id="entries" class="entries"></ul>
++      </section>
++
++      <section class="card">
++        <h2>Graphique des calories par journée</h2>
++        <svg id="chart" width="100%" height="280" viewBox="0 0 860 280" role="img" aria-label="Graphique des calories quotidiennes"></svg>
++      </section>
++    </main>
++
++    <script src="script.js"></script>
++  </body>
++</html>
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..52882f457c1c9d6d6a81ad07e5121e2ceb14dd7a
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,2 @@
++streamlit>=1.36
++pandas>=2.0
+diff --git a/script.js b/script.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..12296e7efabef561bfb33bd5d93b0eac017a5667
+--- /dev/null
++++ b/script.js
+@@ -0,0 +1,261 @@
++const STORAGE_KEY = 'calorie_journal_entries_v1';
++const DEFAULT_CALORIES = {
++  plat: 550,
++  boisson: 120,
++};
++
++const KEYWORD_ESTIMATES = {
++  plat: [
++    { keywords: ['salade', 'soupe', 'legume', 'concombre'], calories: 250 },
++    { keywords: ['poisson', 'poulet', 'grillade', 'fruit de mer', 'crevette'], calories: 420 },
++    { keywords: ['riz', 'pates', 'pasta', 'couscous'], calories: 500 },
++    { keywords: ['dessert', 'gateau', 'tiramisu', 'glace'], calories: 450 },
++    { keywords: ['pizza', 'burger', 'tacos', 'frites'], calories: 850 },
++    { keywords: ['creme', 'fromage', 'bacon'], calories: 700 },
++  ],
++  boisson: [
++    { keywords: ['eau', 'the', 'cafe'], calories: 5 },
++    { keywords: ['jus', 'smoothie'], calories: 110 },
++    { keywords: ['soda', 'cola'], calories: 150 },
++    { keywords: ['milkshake'], calories: 300 },
++    { keywords: ['vin', 'biere', 'alcool', 'cocktail'], calories: 180 },
++  ],
++};
++
++const IMAGE_FALLBACK_RANGES = {
++  plat: { min: 280, max: 950 },
++  boisson: { min: 10, max: 280 },
++};
++
++const form = document.getElementById('entry-form');
++const photoInput = document.getElementById('photo');
++const dateInput = document.getElementById('entry-date');
++const typeInput = document.getElementById('type');
++const nameInput = document.getElementById('name');
++const quantityInput = document.getElementById('quantity');
++const caloriesInput = document.getElementById('calories');
++const selectedDateInput = document.getElementById('selected-date');
++const dailyTotalEl = document.getElementById('daily-total');
++const entriesEl = document.getElementById('entries');
++const chartEl = document.getElementById('chart');
++
++const today = new Date().toISOString().split('T')[0];
++dateInput.value = today;
++selectedDateInput.value = today;
++
++let entries = loadEntries();
++render();
++
++form.addEventListener('submit', async (event) => {
++  event.preventDefault();
++
++  if (!photoInput.files || !photoInput.files[0]) {
++    return;
++  }
++
++  const file = photoInput.files[0];
++  const imageDataUrl = await fileToDataUrl(file);
++
++  const type = typeInput.value;
++  const quantity = Number(quantityInput.value);
++  const customCalories = Number(caloriesInput.value);
++  const name = nameInput.value.trim();
++
++  const estimation = estimateCalories(type, name, imageDataUrl);
++  const isManual = Number.isFinite(customCalories) && customCalories > 0;
++  const caloriesPerPortion = isManual ? customCalories : estimation.calories;
++  const totalCalories = Math.round(caloriesPerPortion * quantity);
++
++  const entry = {
++    id: crypto.randomUUID(),
++    date: dateInput.value,
++    type,
++    name: name || `${capitalize(type)} sans nom`,
++    quantity,
++    caloriesPerPortion,
++    totalCalories,
++    imageDataUrl,
++    estimationSource: isManual ? 'manuel' : estimation.mode,
++    createdAt: new Date().toISOString(),
++  };
++
++  entries.push(entry);
++  saveEntries(entries);
++
++  form.reset();
++  dateInput.value = today;
++  selectedDateInput.value = entry.date;
++  render();
++});
++
++selectedDateInput.addEventListener('change', updateDailyTotal);
++
++function loadEntries() {
++  try {
++    const raw = localStorage.getItem(STORAGE_KEY);
++    return raw ? JSON.parse(raw) : [];
++  } catch (error) {
++    console.error('Impossible de lire le stockage local', error);
++    return [];
++  }
++}
++
++function saveEntries(nextEntries) {
++  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextEntries));
++}
++
++function fileToDataUrl(file) {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader();
++    reader.onload = () => resolve(String(reader.result));
++    reader.onerror = reject;
++    reader.readAsDataURL(file);
++  });
++}
++
++function normalize(value) {
++  return (value || '')
++    .toLowerCase()
++    .normalize('NFD')
++    .replace(/[\u0300-\u036f]/g, '');
++}
++
++function hashString(value) {
++  let hash = 0;
++  for (let i = 0; i < value.length; i += 1) {
++    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
++  }
++  return hash;
++}
++
++function imageBasedFallback(type, imageDataUrl) {
++  const range = IMAGE_FALLBACK_RANGES[type];
++  const span = range.max - range.min + 1;
++  const signature = hashString(imageDataUrl.slice(-5000));
++  return range.min + (signature % span);
++}
++
++function estimateCalories(type, name, imageDataUrl) {
++  const normalizedName = normalize(name);
++  const rules = KEYWORD_ESTIMATES[type] || [];
++  const matches = [];
++
++  for (const rule of rules) {
++    for (const keyword of rule.keywords) {
++      if (normalizedName.includes(keyword)) {
++        matches.push({ keyword, calories: rule.calories });
++      }
++    }
++  }
++
++  if (matches.length > 0) {
++    const average = matches.reduce((sum, item) => sum + item.calories, 0) / matches.length;
++    return { calories: Math.round(average), mode: `auto (mot-clé: ${matches[0].keyword})` };
++  }
++
++  return { calories: imageBasedFallback(type, imageDataUrl), mode: 'auto (photo)' };
++}
++
++function updateDailyTotal() {
++  const selectedDate = selectedDateInput.value;
++  const total = entries
++    .filter((entry) => entry.date === selectedDate)
++    .reduce((sum, entry) => sum + entry.totalCalories, 0);
++  dailyTotalEl.textContent = `${total} kcal`;
++}
++
++function renderEntries() {
++  entriesEl.innerHTML = '';
++
++  const sorted = [...entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
++
++  for (const entry of sorted) {
++    const item = document.createElement('li');
++    item.className = 'entry';
++    item.innerHTML = `
++      <img src="${entry.imageDataUrl}" alt="${entry.name}" />
++      <div class="entry-meta">
++        <strong>${entry.name}</strong>
++        <span>${entry.date} • ${capitalize(entry.type)}</span>
++        <span>Quantité: ${entry.quantity}</span>
++        <span>${entry.caloriesPerPortion} kcal / portion</span>
++        <span>Mode: ${entry.estimationSource || 'manuel'}</span>
++        <strong>Total: ${entry.totalCalories} kcal</strong>
++      </div>
++    `;
++    entriesEl.appendChild(item);
++  }
++}
++
++function renderChart() {
++  const totalsByDate = entries.reduce((acc, entry) => {
++    acc[entry.date] = (acc[entry.date] || 0) + entry.totalCalories;
++    return acc;
++  }, {});
++
++  const dates = Object.keys(totalsByDate).sort();
++  const values = dates.map((date) => totalsByDate[date]);
++
++  const width = 860;
++  const height = 280;
++  const padding = { top: 18, right: 20, bottom: 45, left: 45 };
++
++  const chartWidth = width - padding.left - padding.right;
++  const chartHeight = height - padding.top - padding.bottom;
++  const maxValue = Math.max(...values, 100);
++
++  const bars = dates
++    .map((date, index) => {
++      const value = totalsByDate[date];
++      const barWidth = chartWidth / Math.max(dates.length, 1) - 18;
++      const x = padding.left + index * (chartWidth / Math.max(dates.length, 1)) + 9;
++      const barHeight = (value / maxValue) * (chartHeight - 10);
++      const y = padding.top + chartHeight - barHeight;
++
++      return `
++        <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="#2563eb" rx="6"></rect>
++        <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#1f2937">${value}</text>
++        <text x="${x + barWidth / 2}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#6b7280">${formatDate(date)}</text>
++      `;
++    })
++    .join('');
++
++  const yTicks = [0, 0.25, 0.5, 0.75, 1]
++    .map((ratio) => {
++      const value = Math.round(maxValue * ratio);
++      const y = padding.top + chartHeight - ratio * chartHeight;
++      return `
++        <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#e5e7eb" />
++        <text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6b7280">${value}</text>
++      `;
++    })
++    .join('');
++
++  const empty =
++    dates.length === 0
++      ? `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#6b7280">Ajoute des entrées pour afficher le graphique.</text>`
++      : '';
++
++  chartEl.innerHTML = `
++    <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"></rect>
++    ${yTicks}
++    <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${width - padding.right}" y2="${padding.top + chartHeight}" stroke="#9ca3af" />
++    ${bars}
++    ${empty}
++  `;
++}
++
++function formatDate(date) {
++  const [year, month, day] = date.split('-');
++  return `${day}/${month}`;
++}
++
++function capitalize(value) {
++  return value.charAt(0).toUpperCase() + value.slice(1);
++}
++
++function render() {
++  renderEntries();
++  updateDailyTotal();
++  renderChart();
++}
+diff --git a/streamlit_app.py b/streamlit_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f76f57d076e647221dd6643ca6e2ac9df7f0c5dd
+--- /dev/null
++++ b/streamlit_app.py
+@@ -0,0 +1,162 @@
++from datetime import date
++import binascii
++import unicodedata
++
++import pandas as pd
++import streamlit as st
++
++st.set_page_config(page_title="Calories Photos", page_icon="🍽️", layout="wide")
++
++DEFAULT_CALORIES = {"Plat": 550, "Boisson": 120}
++KEYWORD_ESTIMATES = {
++    "Plat": [
++        (["salade", "soupe", "legume", "concombre"], 250),
++        (["poisson", "poulet", "grillade", "fruit de mer", "crevette"], 420),
++        (["riz", "pates", "pasta", "couscous"], 500),
++        (["dessert", "gateau", "tiramisu", "glace"], 450),
++        (["pizza", "burger", "tacos", "frites"], 850),
++        (["creme", "fromage", "bacon"], 700),
++    ],
++    "Boisson": [
++        (["eau", "the", "cafe"], 5),
++        (["jus", "smoothie"], 110),
++        (["soda", "cola"], 150),
++        (["milkshake"], 300),
++        (["vin", "biere", "alcool", "cocktail"], 180),
++    ],
++}
++
++IMAGE_FALLBACK_RANGES = {"Plat": (280, 950), "Boisson": (10, 280)}
++
++if "entries" not in st.session_state:
++    st.session_state.entries = []
++
++st.title("🍽️ Journal de calories (photos)")
++st.write(
++    "Ajoute des photos de tes plats et boissons, calcule les calories, "
++    "et visualise la consommation par jour."
++)
++
++
++def normalize(text: str) -> str:
++    raw = (text or "").lower()
++    return "".join(
++        char for char in unicodedata.normalize("NFD", raw) if unicodedata.category(char) != "Mn"
++    )
++
++
++def image_based_fallback(entry_type: str, image_bytes: bytes) -> int:
++    lower, upper = IMAGE_FALLBACK_RANGES[entry_type]
++    span = upper - lower + 1
++    signature = binascii.crc32(image_bytes)
++    return lower + (signature % span)
++
++
++def estimate_calories(entry_type: str, name: str, image_bytes: bytes) -> tuple[int, str]:
++    normalized_name = normalize(name)
++    matches: list[tuple[str, int]] = []
++
++    for keywords, calories in KEYWORD_ESTIMATES.get(entry_type, []):
++        for keyword in keywords:
++            if keyword in normalized_name:
++                matches.append((keyword, calories))
++
++    if matches:
++        average = round(sum(cal for _, cal in matches) / len(matches))
++        return average, f"auto (mot-clé: {matches[0][0]})"
++
++    return image_based_fallback(entry_type, image_bytes), "auto (photo)"
++
++
++with st.form("add_entry_form", clear_on_submit=True):
++    col1, col2, col3 = st.columns(3)
++
++    with col1:
++        image = st.file_uploader(
++            "Photo du plat / boisson", type=["png", "jpg", "jpeg", "webp"]
++        )
++        entry_type = st.selectbox("Type", options=["Plat", "Boisson"])
++
++    with col2:
++        entry_date = st.date_input("Date", value=date.today())
++        name = st.text_input("Nom (optionnel)", placeholder="Ex: Salade, Jus d'orange")
++
++    with col3:
++        quantity = st.number_input("Quantité", min_value=1, value=1, step=1)
++        calories_input = st.number_input(
++            "Calories par portion (optionnel)",
++            min_value=0,
++            value=0,
++            step=1,
++            help="Laisse 0 pour utiliser l'estimation automatique.",
++        )
++
++    submitted = st.form_submit_button("Ajouter l'entrée")
++
++if submitted:
++    if image is None:
++        st.error("Ajoute une photo avant de valider.")
++    else:
++        image_bytes = image.getvalue()
++        is_manual = calories_input > 0
++        estimated_calories, auto_mode = estimate_calories(entry_type, name, image_bytes)
++        calories_per_portion = int(calories_input) if is_manual else estimated_calories
++        total_calories = calories_per_portion * int(quantity)
++        label = name.strip() if name.strip() else f"{entry_type} sans nom"
++
++        st.session_state.entries.append(
++            {
++                "Date": entry_date,
++                "Type": entry_type,
++                "Nom": label,
++                "Quantité": int(quantity),
++                "Calories/portion": int(calories_per_portion),
++                "Total calories": int(total_calories),
++                "Mode": "manuel" if is_manual else auto_mode,
++                "Image bytes": image_bytes,
++            }
++        )
++        st.success("Entrée ajoutée.")
++
++st.info(
++    "Si calories vide: l'app essaie d'abord les mots-clés du nom. "
++    "Si aucun mot-clé, elle fait une estimation basée sur la photo (plus de 550 fixe)."
++)
++
++entries = st.session_state.entries
++
++if not entries:
++    st.warning("Aucune entrée pour le moment.")
++    st.stop()
++
++entries_df = pd.DataFrame(entries)
++
++st.subheader("Total des calories pour une journée")
++selected_date = st.date_input("Choisis une date", value=date.today(), key="selected_day")
++daily_total = int(
++    entries_df.loc[entries_df["Date"] == selected_date, "Total calories"].sum()
++)
++st.metric("Calories consommées", f"{daily_total} kcal")
++
++st.subheader("Historique")
++for idx, entry in enumerate(reversed(entries), start=1):
++    left, right = st.columns([1, 3])
++    with left:
++        st.image(entry["Image bytes"], use_container_width=True)
++    with right:
++        st.markdown(
++            f"**{entry['Nom']}**  \n"
++            f"Date: {entry['Date']} • Type: {entry['Type']}  \n"
++            f"Quantité: {entry['Quantité']} • Calories/portion: {entry['Calories/portion']}  \n"
++            f"Mode: {entry['Mode']}  \n"
++            f"**Total: {entry['Total calories']} kcal**"
++        )
++    if idx < len(entries):
++        st.divider()
++
++st.subheader("Graphique des calories par jour")
++chart_df = (
++    entries_df.groupby("Date", as_index=False)["Total calories"].sum().sort_values("Date")
++)
++chart_df = chart_df.rename(columns={"Date": "Jour", "Total calories": "Calories"})
++st.bar_chart(chart_df, x="Jour", y="Calories", use_container_width=True)
+diff --git a/styles.css b/styles.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..788d89be79217100f8081ce75ccd7bd3b1ca61dd
+--- /dev/null
++++ b/styles.css
+@@ -0,0 +1,142 @@
++:root {
++  color-scheme: light;
++  --bg: #f4f7fb;
++  --card: #ffffff;
++  --text: #1f2937;
++  --muted: #6b7280;
++  --primary: #2563eb;
++  --primary-soft: #dbeafe;
++  --border: #e5e7eb;
++  --success: #047857;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
++  color: var(--text);
++  background: var(--bg);
++}
++
++.container {
++  max-width: 980px;
++  margin: 0 auto;
++  padding: 1.25rem;
++}
++
++header {
++  margin-bottom: 1rem;
++}
++
++h1,
++h2 {
++  margin: 0 0 0.5rem;
++}
++
++.card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 14px;
++  padding: 1rem;
++  margin-bottom: 1rem;
++}
++
++.grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
++  gap: 0.85rem;
++}
++
++label {
++  display: flex;
++  flex-direction: column;
++  gap: 0.4rem;
++  font-weight: 600;
++  font-size: 0.92rem;
++}
++
++input,
++select,
++button {
++  font: inherit;
++}
++
++input,
++select {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 0.52rem 0.65rem;
++}
++
++button {
++  margin-top: 0.9rem;
++  background: var(--primary);
++  color: white;
++  border: none;
++  border-radius: 10px;
++  padding: 0.65rem 0.9rem;
++  font-weight: 700;
++  cursor: pointer;
++}
++
++.hint {
++  color: var(--muted);
++  font-size: 0.88rem;
++  margin: 0.8rem 0 0;
++}
++
++.total-row {
++  display: flex;
++  justify-content: space-between;
++  align-items: flex-end;
++  gap: 1rem;
++}
++
++#daily-total {
++  color: var(--success);
++  font-size: 1.25rem;
++}
++
++.entries {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  display: grid;
++  gap: 0.8rem;
++}
++
++.entry {
++  border: 1px solid var(--border);
++  border-radius: 12px;
++  padding: 0.6rem;
++  display: grid;
++  grid-template-columns: 90px 1fr;
++  gap: 0.75rem;
++  align-items: center;
++}
++
++.entry img {
++  width: 90px;
++  height: 90px;
++  object-fit: cover;
++  border-radius: 10px;
++}
++
++.entry-meta {
++  display: grid;
++  gap: 0.2rem;
++  font-size: 0.9rem;
++}
++
++.entry-meta strong {
++  font-size: 0.98rem;
++}
++
++#chart {
++  border: 1px solid var(--border);
++  border-radius: 12px;
++  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
++}
+ 
+EOF
+)
