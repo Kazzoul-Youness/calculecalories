@@ -1,157 +1,142 @@
-from datetime import date
-import unicodedata
-
-import pandas as pd
-import streamlit as st
-
-st.set_page_config(page_title="Calories Photos", page_icon="🍽️", layout="wide")
-
-DEFAULT_CALORIES = {"Plat": 550, "Boisson": 120}
-KEYWORD_ESTIMATES = {
-    "Plat": [
-        (["salade", "soupe", "legume", "concombre"], 250),
-        (["poisson", "poulet", "grillade", "fruit de mer", "crevette"], 420),
-        (["riz", "pates", "pasta", "couscous"], 500),
-        (["dessert", "gateau", "tiramisu", "glace"], 450),
-        (["pizza", "burger", "tacos", "frites"], 850),
-        (["creme", "fromage", "bacon"], 700),
-    ],
-    "Boisson": [
-        (["eau", "the", "cafe"], 5),
-        (["jus", "smoothie"], 110),
-        (["soda", "cola"], 150),
-        (["milkshake"], 300),
-        (["vin", "biere", "alcool", "cocktail"], 180),
-    ],
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --primary: #2563eb;
+  --primary-soft: #dbeafe;
+  --border: #e5e7eb;
+  --success: #047857;
 }
 
+* {
+  box-sizing: border-box;
+}
 
-if "entries" not in st.session_state:
-    st.session_state.entries = []
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
 
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
 
-st.title("🍽️ Journal de calories (photos)")
-st.write(
-    "Ajoute des photos de tes plats et boissons, calcule les calories, "
-    "et visualise la consommation par jour."
-)
+header {
+  margin-bottom: 1rem;
+}
 
+h1,
+h2 {
+  margin: 0 0 0.5rem;
+}
 
-def normalize(text: str) -> str:
-    raw = (text or "").lower()
-    return "".join(
-        char for char in unicodedata.normalize("NFD", raw) if unicodedata.category(char) != "Mn"
-    )
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
 
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
 
-def estimate_calories(entry_type: str, name: str) -> tuple[int, str]:
-    normalized_name = normalize(name)
-    matches: list[tuple[str, int]] = []
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
 
-    for keywords, calories in KEYWORD_ESTIMATES.get(entry_type, []):
-        for keyword in keywords:
-            if keyword in normalized_name:
-                matches.append((keyword, calories))
+input,
+select,
+button {
+  font: inherit;
+}
 
-    if matches:
-        average = round(sum(cal for _, cal in matches) / len(matches))
-        return average, matches[0][0]
+input,
+select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.52rem 0.65rem;
+}
 
-    return DEFAULT_CALORIES[entry_type], ""
+button {
+  margin-top: 0.9rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
 
+.hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0.8rem 0 0;
+}
 
-with st.form("add_entry_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
 
-    with col1:
-        image = st.file_uploader(
-            "Photo du plat / boisson", type=["png", "jpg", "jpeg", "webp"]
-        )
-        entry_type = st.selectbox("Type", options=["Plat", "Boisson"])
+#daily-total {
+  color: var(--success);
+  font-size: 1.25rem;
+}
 
-    with col2:
-        entry_date = st.date_input("Date", value=date.today())
-        name = st.text_input("Nom (optionnel)", placeholder="Ex: Salade, Jus d'orange")
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.8rem;
+}
 
-    with col3:
-        quantity = st.number_input("Quantité", min_value=1, value=1, step=1)
-        calories_input = st.number_input(
-            "Calories par portion (optionnel)",
-            min_value=0,
-            value=0,
-            step=1,
-            help="Laisse 0 pour utiliser l'estimation automatique.",
-        )
+.entry {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.6rem;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
 
-    submitted = st.form_submit_button("Ajouter l'entrée")
+.entry img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 10px;
+}
 
-if submitted:
-    if image is None:
-        st.error("Ajoute une photo avant de valider.")
-    else:
-        estimated_calories, matched_keyword = estimate_calories(entry_type, name)
-        is_manual = calories_input > 0
-        calories_per_portion = int(calories_input) if is_manual else estimated_calories
-        total_calories = calories_per_portion * int(quantity)
-        label = name.strip() if name.strip() else f"{entry_type} sans nom"
+.entry-meta {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+}
 
-        st.session_state.entries.append(
-            {
-                "Date": entry_date,
-                "Type": entry_type,
-                "Nom": label,
-                "Quantité": int(quantity),
-                "Calories/portion": int(calories_per_portion),
-                "Total calories": int(total_calories),
-                "Mode": (
-                    "manuel"
-                    if is_manual
-                    else f"auto ({matched_keyword})" if matched_keyword else "auto (défaut)"
-                ),
-                "Image bytes": image.getvalue(),
-            }
-        )
-        st.success("Entrée ajoutée.")
+.entry-meta strong {
+  font-size: 0.98rem;
+}
 
-st.info(
-    "Si tu ne saisis pas les calories, l'app estime via des mots-clés du nom "
-    "(ex: salade, burger, jus). Sinon, elle applique la valeur manuelle."
-)
-
-entries = st.session_state.entries
-
-if not entries:
-    st.warning("Aucune entrée pour le moment.")
-    st.stop()
-
-entries_df = pd.DataFrame(entries)
-
-st.subheader("Total des calories pour une journée")
-selected_date = st.date_input("Choisis une date", value=date.today(), key="selected_day")
-daily_total = int(
-    entries_df.loc[entries_df["Date"] == selected_date, "Total calories"].sum()
-)
-st.metric("Calories consommées", f"{daily_total} kcal")
-
-st.subheader("Historique")
-for idx, entry in enumerate(reversed(entries), start=1):
-    left, right = st.columns([1, 3])
-    with left:
-        st.image(entry["Image bytes"], use_container_width=True)
-    with right:
-        st.markdown(
-            f"**{entry['Nom']}**  \n"
-            f"Date: {entry['Date']} • Type: {entry['Type']}  \n"
-            f"Quantité: {entry['Quantité']} • Calories/portion: {entry['Calories/portion']}  \n"
-            f"Mode: {entry['Mode']}  \n"
-            f"**Total: {entry['Total calories']} kcal**"
-        )
-    if idx < len(entries):
-        st.divider()
-
-st.subheader("Graphique des calories par jour")
-chart_df = (
-    entries_df.groupby("Date", as_index=False)["Total calories"].sum().sort_values("Date")
-)
-chart_df = chart_df.rename(columns={"Date": "Jour", "Total calories": "Calories"})
-st.bar_chart(chart_df, x="Jour", y="Calories", use_container_width=True)
+#chart {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
