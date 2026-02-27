@@ -1,245 +1,157 @@
-const STORAGE_KEY = 'calorie_journal_entries_v1';
-const DEFAULT_CALORIES = {
-  plat: 550,
-  boisson: 120,
-};
+from datetime import date
+import unicodedata
 
-const KEYWORD_ESTIMATES = {
-  plat: [
-    { keywords: ['salade', 'soupe', 'legume', 'concombre'], calories: 250 },
-    { keywords: ['poisson', 'poulet', 'grillade', 'fruit de mer', 'crevette'], calories: 420 },
-    { keywords: ['riz', 'pates', 'pasta', 'couscous'], calories: 500 },
-    { keywords: ['dessert', 'gateau', 'tiramisu', 'glace'], calories: 450 },
-    { keywords: ['pizza', 'burger', 'tacos', 'frites'], calories: 850 },
-    { keywords: ['creme', 'fromage', 'bacon'], calories: 700 },
-  ],
-  boisson: [
-    { keywords: ['eau', 'the', 'cafe'], calories: 5 },
-    { keywords: ['jus', 'smoothie'], calories: 110 },
-    { keywords: ['soda', 'cola'], calories: 150 },
-    { keywords: ['milkshake'], calories: 300 },
-    { keywords: ['vin', 'biere', 'alcool', 'cocktail'], calories: 180 },
-  ],
-};
+import pandas as pd
+import streamlit as st
 
-const form = document.getElementById('entry-form');
-const photoInput = document.getElementById('photo');
-const dateInput = document.getElementById('entry-date');
-const typeInput = document.getElementById('type');
-const nameInput = document.getElementById('name');
-const quantityInput = document.getElementById('quantity');
-const caloriesInput = document.getElementById('calories');
-const selectedDateInput = document.getElementById('selected-date');
-const dailyTotalEl = document.getElementById('daily-total');
-const entriesEl = document.getElementById('entries');
-const chartEl = document.getElementById('chart');
+st.set_page_config(page_title="Calories Photos", page_icon="🍽️", layout="wide")
 
-const today = new Date().toISOString().split('T')[0];
-dateInput.value = today;
-selectedDateInput.value = today;
-
-let entries = loadEntries();
-render();
-
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-
-  if (!photoInput.files || !photoInput.files[0]) {
-    return;
-  }
-
-  const file = photoInput.files[0];
-  const imageDataUrl = await fileToDataUrl(file);
-
-  const type = typeInput.value;
-  const quantity = Number(quantityInput.value);
-  const customCalories = Number(caloriesInput.value);
-  const name = nameInput.value.trim();
-
-  const estimation = estimateCalories(type, name);
-  const isManual = Number.isFinite(customCalories) && customCalories > 0;
-  const caloriesPerPortion = isManual ? customCalories : estimation.calories;
-  const totalCalories = Math.round(caloriesPerPortion * quantity);
-
-  const entry = {
-    id: crypto.randomUUID(),
-    date: dateInput.value,
-    type,
-    name: name || `${capitalize(type)} sans nom`,
-    quantity,
-    caloriesPerPortion,
-    totalCalories,
-    imageDataUrl,
-    estimationSource: isManual
-      ? 'manuel'
-      : estimation.match
-        ? `auto (${estimation.match})`
-        : 'auto (défaut)',
-    createdAt: new Date().toISOString(),
-  };
-
-  entries.push(entry);
-  saveEntries(entries);
-
-  form.reset();
-  dateInput.value = today;
-  selectedDateInput.value = entry.date;
-  render();
-});
-
-selectedDateInput.addEventListener('change', updateDailyTotal);
-
-function loadEntries() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (error) {
-    console.error('Impossible de lire le stockage local', error);
-    return [];
-  }
+DEFAULT_CALORIES = {"Plat": 550, "Boisson": 120}
+KEYWORD_ESTIMATES = {
+    "Plat": [
+        (["salade", "soupe", "legume", "concombre"], 250),
+        (["poisson", "poulet", "grillade", "fruit de mer", "crevette"], 420),
+        (["riz", "pates", "pasta", "couscous"], 500),
+        (["dessert", "gateau", "tiramisu", "glace"], 450),
+        (["pizza", "burger", "tacos", "frites"], 850),
+        (["creme", "fromage", "bacon"], 700),
+    ],
+    "Boisson": [
+        (["eau", "the", "cafe"], 5),
+        (["jus", "smoothie"], 110),
+        (["soda", "cola"], 150),
+        (["milkshake"], 300),
+        (["vin", "biere", "alcool", "cocktail"], 180),
+    ],
 }
 
-function saveEntries(nextEntries) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextEntries));
-}
 
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+if "entries" not in st.session_state:
+    st.session_state.entries = []
 
-function normalize(value) {
-  return (value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
 
-function estimateCalories(type, name) {
-  const normalizedName = normalize(name);
-  const rules = KEYWORD_ESTIMATES[type] || [];
-  const matches = [];
+st.title("🍽️ Journal de calories (photos)")
+st.write(
+    "Ajoute des photos de tes plats et boissons, calcule les calories, "
+    "et visualise la consommation par jour."
+)
 
-  for (const rule of rules) {
-    for (const keyword of rule.keywords) {
-      if (normalizedName.includes(keyword)) {
-        matches.push({ keyword, calories: rule.calories });
-      }
-    }
-  }
 
-  if (matches.length > 0) {
-    const average = matches.reduce((sum, item) => sum + item.calories, 0) / matches.length;
-    return { calories: Math.round(average), match: matches[0].keyword };
-  }
+def normalize(text: str) -> str:
+    raw = (text or "").lower()
+    return "".join(
+        char for char in unicodedata.normalize("NFD", raw) if unicodedata.category(char) != "Mn"
+    )
 
-  return { calories: DEFAULT_CALORIES[type], match: '' };
-}
 
-function updateDailyTotal() {
-  const selectedDate = selectedDateInput.value;
-  const total = entries
-    .filter((entry) => entry.date === selectedDate)
-    .reduce((sum, entry) => sum + entry.totalCalories, 0);
-  dailyTotalEl.textContent = `${total} kcal`;
-}
+def estimate_calories(entry_type: str, name: str) -> tuple[int, str]:
+    normalized_name = normalize(name)
+    matches: list[tuple[str, int]] = []
 
-function renderEntries() {
-  entriesEl.innerHTML = '';
+    for keywords, calories in KEYWORD_ESTIMATES.get(entry_type, []):
+        for keyword in keywords:
+            if keyword in normalized_name:
+                matches.append((keyword, calories))
 
-  const sorted = [...entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if matches:
+        average = round(sum(cal for _, cal in matches) / len(matches))
+        return average, matches[0][0]
 
-  for (const entry of sorted) {
-    const item = document.createElement('li');
-    item.className = 'entry';
-    item.innerHTML = `
-      <img src="${entry.imageDataUrl}" alt="${entry.name}" />
-      <div class="entry-meta">
-        <strong>${entry.name}</strong>
-        <span>${entry.date} • ${capitalize(entry.type)}</span>
-        <span>Quantité: ${entry.quantity}</span>
-        <span>${entry.caloriesPerPortion} kcal / portion</span>
-        <span>Mode: ${entry.estimationSource || 'manuel'}</span>
-        <strong>Total: ${entry.totalCalories} kcal</strong>
-      </div>
-    `;
-    entriesEl.appendChild(item);
-  }
-}
+    return DEFAULT_CALORIES[entry_type], ""
 
-function renderChart() {
-  const totalsByDate = entries.reduce((acc, entry) => {
-    acc[entry.date] = (acc[entry.date] || 0) + entry.totalCalories;
-    return acc;
-  }, {});
 
-  const dates = Object.keys(totalsByDate).sort();
-  const values = dates.map((date) => totalsByDate[date]);
+with st.form("add_entry_form", clear_on_submit=True):
+    col1, col2, col3 = st.columns(3)
 
-  const width = 860;
-  const height = 280;
-  const padding = { top: 18, right: 20, bottom: 45, left: 45 };
+    with col1:
+        image = st.file_uploader(
+            "Photo du plat / boisson", type=["png", "jpg", "jpeg", "webp"]
+        )
+        entry_type = st.selectbox("Type", options=["Plat", "Boisson"])
 
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...values, 100);
+    with col2:
+        entry_date = st.date_input("Date", value=date.today())
+        name = st.text_input("Nom (optionnel)", placeholder="Ex: Salade, Jus d'orange")
 
-  const bars = dates
-    .map((date, index) => {
-      const value = totalsByDate[date];
-      const barWidth = chartWidth / Math.max(dates.length, 1) - 18;
-      const x = padding.left + index * (chartWidth / Math.max(dates.length, 1)) + 9;
-      const barHeight = (value / maxValue) * (chartHeight - 10);
-      const y = padding.top + chartHeight - barHeight;
+    with col3:
+        quantity = st.number_input("Quantité", min_value=1, value=1, step=1)
+        calories_input = st.number_input(
+            "Calories par portion (optionnel)",
+            min_value=0,
+            value=0,
+            step=1,
+            help="Laisse 0 pour utiliser l'estimation automatique.",
+        )
 
-      return `
-        <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="#2563eb" rx="6"></rect>
-        <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#1f2937">${value}</text>
-        <text x="${x + barWidth / 2}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#6b7280">${formatDate(date)}</text>
-      `;
-    })
-    .join('');
+    submitted = st.form_submit_button("Ajouter l'entrée")
 
-  const yTicks = [0, 0.25, 0.5, 0.75, 1]
-    .map((ratio) => {
-      const value = Math.round(maxValue * ratio);
-      const y = padding.top + chartHeight - ratio * chartHeight;
-      return `
-        <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#e5e7eb" />
-        <text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6b7280">${value}</text>
-      `;
-    })
-    .join('');
+if submitted:
+    if image is None:
+        st.error("Ajoute une photo avant de valider.")
+    else:
+        estimated_calories, matched_keyword = estimate_calories(entry_type, name)
+        is_manual = calories_input > 0
+        calories_per_portion = int(calories_input) if is_manual else estimated_calories
+        total_calories = calories_per_portion * int(quantity)
+        label = name.strip() if name.strip() else f"{entry_type} sans nom"
 
-  const empty =
-    dates.length === 0
-      ? `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#6b7280">Ajoute des entrées pour afficher le graphique.</text>`
-      : '';
+        st.session_state.entries.append(
+            {
+                "Date": entry_date,
+                "Type": entry_type,
+                "Nom": label,
+                "Quantité": int(quantity),
+                "Calories/portion": int(calories_per_portion),
+                "Total calories": int(total_calories),
+                "Mode": (
+                    "manuel"
+                    if is_manual
+                    else f"auto ({matched_keyword})" if matched_keyword else "auto (défaut)"
+                ),
+                "Image bytes": image.getvalue(),
+            }
+        )
+        st.success("Entrée ajoutée.")
 
-  chartEl.innerHTML = `
-    <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"></rect>
-    ${yTicks}
-    <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${width - padding.right}" y2="${padding.top + chartHeight}" stroke="#9ca3af" />
-    ${bars}
-    ${empty}
-  `;
-}
+st.info(
+    "Si tu ne saisis pas les calories, l'app estime via des mots-clés du nom "
+    "(ex: salade, burger, jus). Sinon, elle applique la valeur manuelle."
+)
 
-function formatDate(date) {
-  const [year, month, day] = date.split('-');
-  return `${day}/${month}`;
-}
+entries = st.session_state.entries
 
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+if not entries:
+    st.warning("Aucune entrée pour le moment.")
+    st.stop()
 
-function render() {
-  renderEntries();
-  updateDailyTotal();
-  renderChart();
-}
+entries_df = pd.DataFrame(entries)
+
+st.subheader("Total des calories pour une journée")
+selected_date = st.date_input("Choisis une date", value=date.today(), key="selected_day")
+daily_total = int(
+    entries_df.loc[entries_df["Date"] == selected_date, "Total calories"].sum()
+)
+st.metric("Calories consommées", f"{daily_total} kcal")
+
+st.subheader("Historique")
+for idx, entry in enumerate(reversed(entries), start=1):
+    left, right = st.columns([1, 3])
+    with left:
+        st.image(entry["Image bytes"], use_container_width=True)
+    with right:
+        st.markdown(
+            f"**{entry['Nom']}**  \n"
+            f"Date: {entry['Date']} • Type: {entry['Type']}  \n"
+            f"Quantité: {entry['Quantité']} • Calories/portion: {entry['Calories/portion']}  \n"
+            f"Mode: {entry['Mode']}  \n"
+            f"**Total: {entry['Total calories']} kcal**"
+        )
+    if idx < len(entries):
+        st.divider()
+
+st.subheader("Graphique des calories par jour")
+chart_df = (
+    entries_df.groupby("Date", as_index=False)["Total calories"].sum().sort_values("Date")
+)
+chart_df = chart_df.rename(columns={"Date": "Jour", "Total calories": "Calories"})
+st.bar_chart(chart_df, x="Jour", y="Calories", use_container_width=True)
