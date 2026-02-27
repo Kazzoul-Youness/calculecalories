@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calories Journal - Photos de repas</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Journal de calories</h1>
+        <p>
+          Ajoute des photos de tes plats et boissons, renseigne les infos, puis
+          suis les calories consommées par journée.
+        </p>
+      </header>
+
+      <section class="card">
+        <h2>Ajouter une entrée</h2>
+        <form id="entry-form">
+          <div class="grid">
+            <label>
+              Photo du plat / boisson
+              <input type="file" id="photo" accept="image/*" required />
+            </label>
+
+            <label>
+              Date
+              <input type="date" id="entry-date" required />
+            </label>
+
+            <label>
+              Type
+              <select id="type" required>
+                <option value="">Sélectionner</option>
+                <option value="plat">Plat</option>
+                <option value="boisson">Boisson</option>
+              </select>
+            </label>
+
+            <label>
+              Nom (optionnel)
+              <input type="text" id="name" placeholder="Ex: Salade, Jus d'orange" />
+            </label>
+
+            <label>
+              Quantité
+              <input type="number" id="quantity" min="1" value="1" required />
+            </label>
+
+            <label>
+              Calories par portion (optionnel)
+              <input
+                type="number"
+                id="calories"
+                min="1"
+                placeholder="Laisser vide pour estimation"
+              />
+            </label>
+          </div>
+
+          <p class="hint">
+            Si tu ne renseignes pas les calories, une estimation automatique est appliquée via le nom du plat/boisson (mots-clés).
+          </p>
+
+          <button type="submit">Ajouter l'entrée</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Total calories du jour sélectionné</h2>
+        <div class="total-row">
+          <label>
+            Voir le total pour le jour
+            <input type="date" id="selected-date" />
+          </label>
+          <strong id="daily-total">0 kcal</strong>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Historique des entrées</h2>
+        <ul id="entries" class="entries"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Graphique des calories par journée</h2>
+        <svg id="chart" width="100%" height="280" viewBox="0 0 860 280" role="img" aria-label="Graphique des calories quotidiennes"></svg>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
