@@ -9,7 +9,8 @@ import io
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MODEL = "google/gemini-2.0-flash-lite"  # ~$0.00004/req, supporte images
+MODEL_VISION = "google/gemini-2.0-flash-lite"   # pour les images
+MODEL_TEXT   = "google/gemini-2.0-flash-lite"   # pour le texte
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 HEADERS = {
@@ -68,32 +69,43 @@ st.markdown("""
 # ── OpenRouter helpers ────────────────────────────────────────────────────────
 PROMPT_JSON = 'Réponds UNIQUEMENT en JSON valide sans markdown ni backticks: {"name":"Nom du plat","calories":350,"emoji":"🍝","details":"1 phrase explication"}'
 
-def call_openrouter(messages: list) -> dict:
-    resp = requests.post(API_URL, headers=HEADERS, json={
-        "model": MODEL,
+def call_openrouter(messages: list, model: str) -> dict:
+    payload = {
+        "model": model,
         "max_tokens": 300,
         "messages": messages
-    }, timeout=30)
-    resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"]
+    }
+    resp = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
+    if not resp.ok:
+        raise Exception(f"OpenRouter error {resp.status_code}: {resp.text}")
+    data = resp.json()
+    raw = data["choices"][0]["message"]["content"]
     raw = raw.strip().replace("```json","").replace("```","").strip()
     return json.loads(raw)
 
 def analyze_image(img_bytes: bytes, media_type: str = "image/jpeg") -> dict:
-    b64 = base64.b64encode(img_bytes).decode()
+    # Redimensionne l'image pour éviter les erreurs de taille
+    from PIL import Image
+    import io
+    img = Image.open(io.BytesIO(img_bytes))
+    img.thumbnail((800, 800))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+
     return call_openrouter([{
         "role": "user",
         "content": [
-            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
             {"type": "text", "text": f"Analyse ce plat et estime les calories totales. {PROMPT_JSON}"}
         ]
-    }])
+    }], MODEL_VISION)
 
 def analyze_text(txt: str) -> dict:
     return call_openrouter([{
         "role": "user",
         "content": f'L\'utilisateur a mangé: "{txt}". Estime les calories totales. {PROMPT_JSON}'
-    }])
+    }], MODEL_TEXT)
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 cols = st.columns(4)
