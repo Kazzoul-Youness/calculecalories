@@ -9,8 +9,8 @@ import io
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MODEL_VISION = "google/gemini-2.0-flash-lite"   # pour les images
-MODEL_TEXT   = "google/gemini-2.0-flash-lite"   # pour le texte
+MODEL_VISION = "google/gemini-2.0-flash-lite:free"
+MODEL_TEXT   = "google/gemini-2.0-flash-lite:free"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 HEADERS = {
@@ -87,7 +87,7 @@ def analyze_image(img_bytes: bytes, media_type: str = "image/jpeg") -> dict:
     # Redimensionne l'image pour éviter les erreurs de taille
     from PIL import Image
     import io
-    img = Image.open(io.BytesIO(img_bytes))
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")  # fix RGBA/PNG
     img.thumbnail((800, 800))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
