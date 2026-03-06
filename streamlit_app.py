@@ -9,9 +9,9 @@ import io
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MODEL_VISION = "meta-llama/llama-3.2-11b-vision-instruct:free"  # gratuit + vision
-MODEL_TEXT   = "google/gemma-3-12b-it:free"                     # gratuit + rapide
-API_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_VISION = "meta-llama/llama-3.2-11b-vision-instruct:free"
+MODEL_TEXT   = "google/gemma-3-12b-it:free"
+API_URL      = "https://openrouter.ai/api/v1/chat/completions"
 
 HEADERS = {
     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -70,29 +70,24 @@ st.markdown("""
 PROMPT_JSON = 'Réponds UNIQUEMENT en JSON valide sans markdown ni backticks: {"name":"Nom du plat","calories":350,"emoji":"🍝","details":"1 phrase explication"}'
 
 def call_openrouter(messages: list, model: str) -> dict:
-    payload = {
+    resp = requests.post(API_URL, headers=HEADERS, json={
         "model": model,
         "max_tokens": 300,
         "messages": messages
-    }
-    resp = requests.post(API_URL, headers=HEADERS, json=payload, timeout=30)
+    }, timeout=30)
     if not resp.ok:
         raise Exception(f"OpenRouter error {resp.status_code}: {resp.text}")
-    data = resp.json()
-    raw = data["choices"][0]["message"]["content"]
-    raw = raw.strip().replace("```json","").replace("```","").strip()
+    raw = resp.json()["choices"][0]["message"]["content"]
+    raw = raw.strip().replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
-def analyze_image(img_bytes: bytes, media_type: str = "image/jpeg") -> dict:
-    # Redimensionne l'image pour éviter les erreurs de taille
+def analyze_image(img_bytes: bytes) -> dict:
     from PIL import Image
-    import io
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")  # fix RGBA/PNG
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")  # fix PNG/RGBA
     img.thumbnail((800, 800))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     b64 = base64.b64encode(buf.getvalue()).decode()
-
     return call_openrouter([{
         "role": "user",
         "content": [
@@ -109,9 +104,8 @@ def analyze_text(txt: str) -> dict:
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 cols = st.columns(4)
-nav_items = [("journal","🍽️","Journal"),("eau","💧","Eau"),("historique","📊","Historique"),("profil","👤","Profil")]
-for i,(pg,ic,lb) in enumerate(nav_items):
-    with cols[i]:
+for pg, ic, lb in [("journal","🍽️","Journal"),("eau","💧","Eau"),("historique","📊","Historique"),("profil","👤","Profil")]:
+    with cols[["journal","eau","historique","profil"].index(pg)]:
         if st.button(f"{ic} {lb}", key=f"nav_{pg}", use_container_width=True):
             st.session_state.page = pg
             st.rerun()
@@ -139,8 +133,8 @@ if st.session_state.profile is None:
 
     if st.button("✅ Calculer mon objectif", use_container_width=True, type="primary"):
         if prenom:
-            s   = "h" if "Homme" in sex else "f"
-            bmr = (10*poids + 6.25*taille - 5*age + 5) if s=="h" else (10*poids + 6.25*taille - 5*age - 161)
+            s    = "h" if "Homme" in sex else "f"
+            bmr  = (10*poids + 6.25*taille - 5*age + 5) if s=="h" else (10*poids + 6.25*taille - 5*age - 161)
             tdee = round(bmr * act_options[activite_label])
             st.session_state.profile = {
                 "prenom": prenom, "sex": s, "age": age,
@@ -188,17 +182,13 @@ if st.session_state.page == "journal":
     st.markdown("### ➕ Ajouter un repas")
     tab_photo, tab_text = st.tabs(["📷 Photo", "✍️ Texte / Vocal 🎤"])
 
-    # ── Photo ─────────────────────────────────────────────────────────────────
     with tab_photo:
         uploaded = st.camera_input("📷 Prends une photo") or \
                    st.file_uploader("Ou importe une photo", type=["jpg","jpeg","png","webp"])
         if uploaded:
-            ext = uploaded.name.split(".")[-1].lower() if hasattr(uploaded, "name") else "jpg"
-            media_map = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}
-            media_type = media_map.get(ext, "image/jpeg")
             with st.spinner("🤖 Analyse de ton plat en cours..."):
                 try:
-                    result = analyze_image(uploaded.getvalue(), media_type)
+                    result = analyze_image(uploaded.getvalue())
                     st.session_state.pending_meal = result
                 except Exception as e:
                     st.error(f"Erreur : {e}")
@@ -211,7 +201,6 @@ if st.session_state.page == "journal":
                 st.session_state.pending_meal = None
                 st.rerun()
 
-    # ── Texte / Vocal ─────────────────────────────────────────────────────────
     with tab_text:
         st.caption("💡 Sur iPhone : appuie sur le micro 🎤 du clavier pour dicter !")
         txt = st.text_area("Qu'est-ce que tu as mangé ?",
@@ -236,7 +225,6 @@ if st.session_state.page == "journal":
                 st.session_state.pending_meal_txt = None
                 st.rerun()
 
-    # ── Liste repas ───────────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 🗒️ Repas du jour")
     if not st.session_state.meals:
