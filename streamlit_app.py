@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def init_state():
