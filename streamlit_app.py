@@ -7,7 +7,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Masquer le header/footer Streamlit
 st.markdown("""
 <style>
     #MainMenu, footer, header { visibility: hidden; }
@@ -19,10 +18,3 @@ with open("index.html", "r", encoding="utf-8") as f:
     html = f.read()
 
 components.html(html, height=900, scrolling=True)
-```
-
----
-
-### 📋 Étape 3 — `requirements.txt`
-```
-streamlit
