@@ -9,7 +9,7 @@ import io
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MODEL_VISION = "meta-llama/llama-3.2-11b-vision-instruct:free"
+MODEL_VISION = "qwen/qwen3-vl-8b-instruct:free"
 MODEL_TEXT   = "google/gemma-3-12b-it:free"
 API_URL      = "https://openrouter.ai/api/v1/chat/completions"
 
