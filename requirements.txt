@@ -2,3 +2,4 @@ streamlit
 requests
 altair
 pandas
+Pillow
