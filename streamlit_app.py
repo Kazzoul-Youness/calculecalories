@@ -1,14 +1,23 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
 import base64
 import json
 from datetime import datetime, date, timedelta
+import io
 
 # ── Config ───────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-1.5-flash")
+OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+MODEL = "google/gemini-2.0-flash-lite"  # ~$0.00004/req, supporte images
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+HEADERS = {
+    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://calculecalories.streamlit.app",
+    "X-Title": "Calorie Tracker"
+}
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def init_state():
@@ -19,6 +28,8 @@ def init_state():
         "history": {},
         "last_day": str(date.today()),
         "page": "journal",
+        "pending_meal": None,
+        "pending_meal_txt": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -54,25 +65,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Gemini helpers ────────────────────────────────────────────────────────────
-PROMPT_JSON = 'Réponds UNIQUEMENT en JSON valide sans markdown ni backticks: {"name":"Nom","calories":350,"emoji":"🍝","details":"1 phrase explication"}'
+# ── OpenRouter helpers ────────────────────────────────────────────────────────
+PROMPT_JSON = 'Réponds UNIQUEMENT en JSON valide sans markdown ni backticks: {"name":"Nom du plat","calories":350,"emoji":"🍝","details":"1 phrase explication"}'
 
-def analyze_image(img_bytes: bytes) -> dict:
-    import PIL.Image, io
-    img = PIL.Image.open(io.BytesIO(img_bytes))
-    resp = model.generate_content([
-        f"Analyse ce plat et estime les calories totales. {PROMPT_JSON}",
-        img
-    ])
-    raw = resp.text.strip().replace("```json","").replace("```","").strip()
+def call_openrouter(messages: list) -> dict:
+    resp = requests.post(API_URL, headers=HEADERS, json={
+        "model": MODEL,
+        "max_tokens": 300,
+        "messages": messages
+    }, timeout=30)
+    resp.raise_for_status()
+    raw = resp.json()["choices"][0]["message"]["content"]
+    raw = raw.strip().replace("```json","").replace("```","").strip()
     return json.loads(raw)
+
+def analyze_image(img_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    b64 = base64.b64encode(img_bytes).decode()
+    return call_openrouter([{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+            {"type": "text", "text": f"Analyse ce plat et estime les calories totales. {PROMPT_JSON}"}
+        ]
+    }])
 
 def analyze_text(txt: str) -> dict:
-    resp = model.generate_content(
-        f'L\'utilisateur a mangé: "{txt}". Estime les calories totales. {PROMPT_JSON}'
-    )
-    raw = resp.text.strip().replace("```json","").replace("```","").strip()
-    return json.loads(raw)
+    return call_openrouter([{
+        "role": "user",
+        "content": f'L\'utilisateur a mangé: "{txt}". Estime les calories totales. {PROMPT_JSON}'
+    }])
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 cols = st.columns(4)
@@ -90,11 +111,11 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.profile is None:
     st.markdown("### 👋 Configure ton profil")
-    prenom  = st.text_input("Prénom")
-    sex     = st.radio("Sexe", ["👨 Homme", "👩 Femme"], horizontal=True)
-    age     = st.number_input("Âge", 10, 100, 30)
-    poids   = st.number_input("Poids (kg)", 30.0, 300.0, 70.0)
-    taille  = st.number_input("Taille (cm)", 100.0, 250.0, 170.0)
+    prenom = st.text_input("Prénom")
+    sex    = st.radio("Sexe", ["👨 Homme", "👩 Femme"], horizontal=True)
+    age    = st.number_input("Âge", 10, 100, 30)
+    poids  = st.number_input("Poids (kg)", 30.0, 300.0, 70.0)
+    taille = st.number_input("Taille (cm)", 100.0, 250.0, 170.0)
     act_options = {
         "😴 Sédentaire": 1.2,
         "🚶 Légèrement actif (1-3x/sem)": 1.375,
@@ -160,14 +181,17 @@ if st.session_state.page == "journal":
         uploaded = st.camera_input("📷 Prends une photo") or \
                    st.file_uploader("Ou importe une photo", type=["jpg","jpeg","png","webp"])
         if uploaded:
-            with st.spinner("🤖 Gemini analyse ton plat..."):
+            ext = uploaded.name.split(".")[-1].lower() if hasattr(uploaded, "name") else "jpg"
+            media_map = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}
+            media_type = media_map.get(ext, "image/jpeg")
+            with st.spinner("🤖 Analyse de ton plat en cours..."):
                 try:
-                    result = analyze_image(uploaded.getvalue())
-                    st.session_state["pending_meal"] = result
+                    result = analyze_image(uploaded.getvalue(), media_type)
+                    st.session_state.pending_meal = result
                 except Exception as e:
                     st.error(f"Erreur : {e}")
 
-        if "pending_meal" in st.session_state and st.session_state.pending_meal:
+        if st.session_state.pending_meal:
             r = st.session_state.pending_meal
             st.success(f"{r['emoji']} **{r['name']}** — 🔥 **{r['calories']} kcal**\n\n_{r['details']}_")
             if st.button("✅ Ajouter ce repas", key="add_photo", use_container_width=True, type="primary"):
@@ -186,13 +210,13 @@ if st.session_state.page == "journal":
                 with st.spinner("🤖 Calcul en cours..."):
                     try:
                         result = analyze_text(txt)
-                        st.session_state["pending_meal_txt"] = result
+                        st.session_state.pending_meal_txt = result
                     except Exception as e:
                         st.error(f"Erreur : {e}")
             else:
                 st.warning("Écris ce que tu as mangé !")
 
-        if "pending_meal_txt" in st.session_state and st.session_state.pending_meal_txt:
+        if st.session_state.pending_meal_txt:
             r = st.session_state.pending_meal_txt
             st.success(f"{r['emoji']} **{r['name']}** — 🔥 **{r['calories']} kcal**\n\n_{r['details']}_")
             if st.button("✅ Ajouter ce repas", key="add_txt", use_container_width=True, type="primary"):
