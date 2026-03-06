@@ -9,8 +9,8 @@ import io
 st.set_page_config(page_title="Calorie Tracker", page_icon="🥗", layout="centered")
 
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MODEL_VISION = "google/gemini-2.0-flash-lite:free"
-MODEL_TEXT   = "google/gemini-2.0-flash-lite:free"
+MODEL_VISION = "meta-llama/llama-3.2-11b-vision-instruct:free"  # gratuit + vision
+MODEL_TEXT   = "google/gemma-3-12b-it:free"                     # gratuit + rapide
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 HEADERS = {
@@ -96,8 +96,8 @@ def analyze_image(img_bytes: bytes, media_type: str = "image/jpeg") -> dict:
     return call_openrouter([{
         "role": "user",
         "content": [
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            {"type": "text", "text": f"Analyse ce plat et estime les calories totales. {PROMPT_JSON}"}
+            {"type": "text", "text": f"Analyse ce plat et estime les calories totales. {PROMPT_JSON}"},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
         ]
     }], MODEL_VISION)
 
